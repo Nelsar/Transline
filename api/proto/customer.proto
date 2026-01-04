@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package customer;
+
+option go_package = "api/proto/customerpb";
+
+service CustomerService {
+  rpc UpsertCustomer (UpsertCustomerRequest) returns (CustomerResponse);
+}
+
+message UpsertCustomerRequest {
+  string idn = 1;
+}
+
+message CustomerResponse {
+  string id = 1;
+  string idn = 2;
+  string created_at = 3;
+}

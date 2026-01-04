@@ -1,0 +1,86 @@
+static_resources:
+  listeners:
+    # ===== HTTP (REST) =====
+    - name: http_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: http_ingress
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: shipment_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/api/v1/"
+                          route:
+                            cluster: shipment
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # ===== gRPC (internal) =====
+    - name: grpc_listener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 9090
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: grpc_ingress
+                http2_protocol_options: {}
+                route_config:
+                  name: grpc_route
+                  virtual_hosts:
+                    - name: customer_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/customer.CustomerService/"
+                          route:
+                            cluster: customer
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: shipment
+      connect_timeout: 5s
+      type: logical_dns
+      lb_policy: round_robin
+      load_assignment:
+        cluster_name: shipment
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: shipment-service
+                      port_value: 8080
+
+    - name: customer
+      connect_timeout: 5s
+      type: logical_dns
+      lb_policy: round_robin
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: customer
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: customer-service
+                      port_value: 9090
