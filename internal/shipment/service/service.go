@@ -47,32 +47,46 @@ func (s *Service) CreateShipment(
 		return nil, errors.New("route is required")
 	}
 
+	if len(in.Route) > 255 {
+		return nil, errors.New("route is too long (max 255 chars)")
+	}
+
 	if in.Price <= 0 {
 		return nil, errors.New("price must be positive")
 	}
 
-	if !regexp.MustCompile(`^\d{12}$`).MatchString(in.IDN) {
-		return nil, errors.New("invalid idn")
+	if in.Price > 1e10 {
+		return nil, errors.New("price is too high")
 	}
 
-	//Upsert customer через gRPC
+	if !regexp.MustCompile(`^\d{12}$`).MatchString(in.IDN) {
+		return nil, errors.New("invalid idn format (must be 12 digits)")
+	}
+
+	// Upsert customer через gRPC
 	cus, err := s.customerGRPC.UpsertCustomer(ctx, in.IDN)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("failed to upsert customer: " + err.Error())
 	}
 
-	//Создание shipment
+	// Parse customer ID from string to UUID
+	customerID, err := uuid.Parse(cus.Id)
+	if err != nil {
+		return nil, errors.New("invalid customer id format: " + err.Error())
+	}
+
+	// Создание shipment
 	sh, err := s.repo.Create(
 		ctx,
-		cus.Id,
+		customerID,
 		in.Route,
 		in.Price,
 	)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("failed to create shipment: " + err.Error())
 	}
 
-	//Возврат результата
+	// Возврат результата
 	return &CreateShipmentResult{
 		ID:         sh.ID,
 		Status:     sh.Status,

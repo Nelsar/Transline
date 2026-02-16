@@ -25,8 +25,8 @@ func New(db *pgxpool.Pool) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) Create(ctx context.Context, customerID, route string, price float64) (*Shipment, error) {
-	id := uuid.New().String()
+func (r *Repo) Create(ctx context.Context, customerID uuid.UUID, route string, price float64) (*Shipment, error) {
+	id := uuid.New()
 	row := r.db.QueryRow(ctx, `
     INSERT INTO shipments (id, route, price, customer_id)
     VALUES ($1,$2,$3,$4)

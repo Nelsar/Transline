@@ -13,7 +13,9 @@ message UpsertCustomerRequest {
 }
 
 message CustomerResponse {
+  // UUID v4 as string
   string id = 1;
   string idn = 2;
+  // RFC3339 timestamp string
   string created_at = 3;
 }

@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -17,10 +21,30 @@ import (
 )
 
 func main() {
+	// OpenTelemetry
 	shutdown := otel.Init("customer-service")
-	defer shutdown(context.Background())
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdown(ctx); err != nil {
+			log.Printf("error shutting down otel: %v", err)
+		}
+	}()
 
-	db, _ := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	// PostgreSQL
+	db, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("db connect error: %v", err)
+	}
+	defer db.Close()
+
+	// Check DB connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := db.Ping(ctx); err != nil {
+		cancel()
+		log.Fatalf("db ping error: %v", err)
+	}
+	cancel()
 
 	r := repo.New(db)
 	svc := service.New(r)
@@ -31,6 +55,23 @@ func main() {
 
 	pb.RegisterCustomerServiceServer(grpcServer, cgrpc.New(svc))
 
-	lis, _ := net.Listen("tcp", ":9090")
-	grpcServer.Serve(lis)
+	lis, err := net.Listen("tcp", ":9090")
+	if err != nil {
+		log.Fatalf("listener error: %v", err)
+	}
+
+	// Graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Println("shutdown signal received")
+		grpcServer.GracefulStop()
+	}()
+
+	log.Println("customer-service listening on :9090")
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("grpc server error: %v", err)
+	}
 }
