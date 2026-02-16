@@ -2,8 +2,9 @@ package http
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
+
+	"log/slog"
 
 	"github.com/google/uuid"
 	shservice "transline.kz/internal/shipment/service"
@@ -72,6 +73,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		log.Printf("error encoding response: %v", err)
+		slog.Error("error encoding response", "err", err)
 	}
 }

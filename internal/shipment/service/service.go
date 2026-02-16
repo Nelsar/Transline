@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/google/uuid"
 	shgrpc "transline.kz/internal/shipment/grpc"
@@ -63,16 +65,18 @@ func (s *Service) CreateShipment(
 		return nil, errors.New("invalid idn format (must be 12 digits)")
 	}
 
-	// Upsert customer через gRPC
-	cus, err := s.customerGRPC.UpsertCustomer(ctx, in.IDN)
+	// Upsert customer через gRPC (с таймаутом)
+	grpcCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	cus, err := s.customerGRPC.UpsertCustomer(grpcCtx, in.IDN)
 	if err != nil {
-		return nil, errors.New("failed to upsert customer: " + err.Error())
+		return nil, fmt.Errorf("failed to upsert customer: %w", err)
 	}
 
 	// Parse customer ID from string to UUID
 	customerID, err := uuid.Parse(cus.Id)
 	if err != nil {
-		return nil, errors.New("invalid customer id format: " + err.Error())
+		return nil, fmt.Errorf("invalid customer id format: %w", err)
 	}
 
 	// Создание shipment
@@ -83,7 +87,7 @@ func (s *Service) CreateShipment(
 		in.Price,
 	)
 	if err != nil {
-		return nil, errors.New("failed to create shipment: " + err.Error())
+		return nil, fmt.Errorf("failed to create shipment: %w", err)
 	}
 
 	// Возврат результата

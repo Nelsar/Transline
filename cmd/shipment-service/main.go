@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,18 +26,21 @@ import (
 func main() {
 	// OpenTelemetry
 	shutdown := otel.Init("shipment-service")
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := shutdown(ctx); err != nil {
-			log.Printf("error shutting down otel: %v", err)
+			slog.Error("error shutting down otel", "err", err)
 		}
 	}()
 
 	// PostgreSQL
 	db, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatalf("db connect error: %v", err)
+		slog.Error("db connect error", "err", err)
+		os.Exit(1)
 	}
 	defer db.Close()
 
@@ -45,7 +48,8 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := db.Ping(ctx); err != nil {
 		cancel()
-		log.Fatalf("db ping error: %v", err)
+		slog.Error("db ping error", "err", err)
+		os.Exit(1)
 	}
 	cancel()
 
@@ -56,7 +60,8 @@ func main() {
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
 	if err != nil {
-		log.Fatalf("grpc dial error: %v", err)
+		slog.Error("grpc dial error", "err", err)
+		os.Exit(1)
 	}
 	defer conn.Close()
 
@@ -90,17 +95,18 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("shutdown signal received")
+		slog.Info("shutdown signal received")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("http server shutdown error: %v", err)
+			slog.Error("http server shutdown error", "err", err)
 		}
 	}()
 
-	log.Println("shipment-service listening on :8080")
+	slog.Info("shipment-service listening", "addr", server.Addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("http server error: %v", err)
+		slog.Error("http server error", "err", err)
+		os.Exit(1)
 	}
-	log.Println("shipment-service stopped")
+	slog.Info("shipment-service stopped")
 }
